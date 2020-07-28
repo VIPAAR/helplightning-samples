@@ -34,33 +34,11 @@ def get_logger(level=logging.DEBUG):
 
 
 class HLClient:
-    def __init__(self, logger, url, api_key, username=None, password=None, token=None):
+    def __init__(self, logger, url, api_key, token):
         self.lg = logger
         self.url = url
         self.api_key = api_key
-        if token is not None:
-            self.token = token
-        elif username is not None and password is not None:
-            self.token = self.auth_password(username, password)
-        else:
-            self.lg.error('HLClient: no valid authentication credentials provided')
-
-    ###########################
-    # START Auth Methods
-    ###########################
-    def auth_password(self, username, password):
-        body = {
-            'email': username,
-            'password': password
-        }
-        data = self.post_no_token('/v1/admin/auth', body)
-        return data['token']
-
-    def set_token(self, token):
         self.token = token
-    ###########################
-    # END Auth Methods
-    ###########################
 
     ###########################
     # START Pagination Methods
@@ -180,19 +158,6 @@ class HLClient:
     ###########################
 
 
-def admin_auth(logger):
-    username = input('username: ')
-    password = getpass.getpass()
-
-    return HLClient(
-        logger,
-        HL_API_URL,
-        HL_API_KEY,
-        username=username,
-        password=password
-    )
-
-
 def generate_token(partner_key):
     # create a date that expires in 1 hour
     exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3600)
@@ -212,20 +177,6 @@ def generate_token(partner_key):
     token = jwt.encode(payload, key=secret, algorithm='RS256')
 
     return token
-
-
-def enterprise_client(e_id, logger, client=None, enterprise_token=None):
-    if not enterprise_token:
-        # find this enterprise and get a token for it
-        r = client.get('/v1/admin/enterprises/%s' % e_id)
-        enterprise_token = r['token']
-
-    return HLClient(
-        logger,
-        HL_API_URL,
-        HL_API_KEY,
-        token=enterprise_token
-    )
 
 
 def write_users(e_client, start_date, base):
@@ -470,15 +421,15 @@ def go(partner_key, fetch_all):
     # We'll write this timestamp out to a file at the end of the run
     utc_now = datetime.datetime.now(datetime.timezone.utc)
 
+    # Set up the Help Lightning API client 
     logger = get_logger(level=logging.INFO)
-
-    # Generate a token using a partner key if provided, else prompt for credentials
-    if partner_key:
-        token = generate_token(partner_key)
-        e_client = enterprise_client(ENTERPRISE_ID, logger, enterprise_token=token)
-    else:
-        client = admin_auth(logger)
-        e_client = enterprise_client(ENTERPRISE_ID, logger, client=client)
+    token = generate_token(partner_key)
+    e_client = HLClient(
+        logger,
+        HL_API_URL,
+        HL_API_KEY,
+        token
+    )
 
     if fetch_all:
         start_date = ''
@@ -527,7 +478,7 @@ def go(partner_key, fetch_all):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--partner-key',
+        'partner_key',
         help='The location on disk of a partner key to use for generating tokens'
     )
     parser.add_argument(
