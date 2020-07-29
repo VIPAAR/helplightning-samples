@@ -64,7 +64,7 @@ You can only have one active partner key at a time. If you or someone in your si
    }
    ```
 
-3. Use the curl command line tool to obtain a JWT user token.
+3. Use the curl command line tool to obtain a JWT user token, filling in the values for your API key and credentials file.
 
    ```
    curl 'https://api.helplightning.net/api/v1/auth' -H 'x-helplightning-api-key: yourApiKey' -H 'Content-Type: application/json' -d @/path/to/yourCredentialsFile
