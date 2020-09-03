@@ -208,18 +208,12 @@ def write_users(e_client, group_id, start_date, base):
         'is_confirmed',
         'is_first_login',
         'last_used_at',
-        'license',
         'location',
-        'manage',
         'name',
-        'provider',
-        'provider_uid',
         'role_id',
         'role_name',
         'status',
-        'status_message',
         'title',
-        'unavailable_expires_at',
         'updated_at',
         'username'
     ]
@@ -357,19 +351,23 @@ def get_pods_link_tables_writer(e_client, user_ids, base, users_file, admins_fil
     return fetch_and_write
 
 
-def write_calls(e_client, enterprise_id, group_id, start_date, base):
+def write_calls(e_client, enterprise_id, user_ids, start_date, base):
+    # convert ids to strings
+    user_ids = [f'{x}' for x in user_ids]
+    
     def url_query_params():
         if not start_date:
-            return (f'/v1/enterprise/pods/{group_id}/calls', {})
+            return ('/v1/enterprise/calls', {})
         else:
             # updates since the last run
             s = int(start_date.timestamp())
-            return ('/v1/enterprise/pods/{group_id}/calls', {'filter': 'order=timeCallStarted:desc'})
+            return ('/v1/enterprise/calls/range', {'from_date': s})
 
     url, params = url_query_params()
 
     filter_params = [
         ('session', 'id', ''),
+        ('has_attachments', 'has_attachments', False),
         ('callDuration', 'call_duration', 0),
         ('dialerId', 'dialer_id', '-1'),
         ('dialerName', 'dialer_name', ''),
@@ -399,10 +397,16 @@ def write_calls(e_client, enterprise_id, group_id, start_date, base):
 
         def cb(entries):
             for e in entries:
-                d = datetime.datetime.fromtimestamp(float(e['timestamp']))
-                if start_date and e < d:
-                    # stop processing, we've hit old calls we aren't interested in
-                    return
+                # verify at least one of the participant ids is in our user_ids list
+                p_ids = [f'{x["id"]}' for x in e['participants']]
+                def any_ids(iterable, f):
+                    for element in iterable:
+                        if f(element):
+                            return True
+                    return False
+                if not any_ids(p_ids, lambda x: x in user_ids):
+                    # skip
+                    continue
                 
                 row = {}
                 for (p0, p1, default) in filter_params:
@@ -425,6 +429,8 @@ def write_calls(e_client, enterprise_id, group_id, start_date, base):
                         'isExternal': participant['enterpriseId'] != f'{enterprise_id}'
                     }
                     link_table_writer.writerow(row)
+
+            return []
 
         e_client.get_all_cb(cb, url, params)
 
@@ -469,7 +475,7 @@ def go(partner_key, fetch_all):
     with tempfile.TemporaryDirectory() as base:
         user_ids = write_users(e_client, GROUP_ID, start_date, base)
         write_pods(e_client, user_ids, start_date, base)
-        write_calls(e_client, ENTERPRISE_ID, GROUP_ID, start_date, base)
+        write_calls(e_client, ENTERPRISE_ID, user_ids, start_date, base)
 
         # Output an encrypted 7zip file
         timestamp = utc_now.strftime('%Y%m%dT%H:%M:%SZ')
