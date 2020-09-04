@@ -1,0 +1,4 @@
+*/*.7z
+*/*.md5
+*/last_run.json
+*/__pycache__
