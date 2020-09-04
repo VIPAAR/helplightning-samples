@@ -447,6 +447,7 @@ def go(partner_key, fetch_all):
         else:
             last_run_date = last_run['timestamp']
             start_date = datetime.datetime.strptime(last_run_date,'%Y-%m-%dT%H:%M:%S.%fZ')
+            start_date = start_date.replace(tzinfo = datetime.timezone.utc)
 
     # Make a temporary directory to store export files before they are archived
     with tempfile.TemporaryDirectory() as base:
