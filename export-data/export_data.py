@@ -446,7 +446,8 @@ def go(partner_key, fetch_all):
             start_date = ''
         else:
             last_run_date = last_run['timestamp']
-            start_date = datetime.datetime.fromisoformat(last_run_date)
+            start_date = datetime.datetime.strptime(last_run_date,'%Y-%m-%dT%H:%M:%S.%fZ')
+            start_date = start_date.replace(tzinfo = datetime.timezone.utc)
 
     # Make a temporary directory to store export files before they are archived
     with tempfile.TemporaryDirectory() as base:
@@ -472,7 +473,7 @@ def go(partner_key, fetch_all):
 
     # Update last_run.json with the datetime of this run
     with open('last_run.json', 'w') as f:
-        f.write(json.dumps({'timestamp': utc_now.isoformat()}))
+        f.write(json.dumps({'timestamp': utc_now.strftime('%Y-%m-%dT%H:%M:%S.%fZ')}))
 
 
 if __name__ == '__main__':
