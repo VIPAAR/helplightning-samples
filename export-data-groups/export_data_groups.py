@@ -14,6 +14,7 @@ import sys
 import tempfile
 
 try:
+    sys.path.append('.')
     import libhelplightning
     import siteconfig
 except ImportError:
