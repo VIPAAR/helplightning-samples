@@ -12,7 +12,7 @@ API_KEY = 'xxxx'
 #  SITE ID
 # See: https://apidocs.helplightning.net/background/partner-keys/
 PARTNER_KEY = '/home/username/.helplightning/privatekey.pem'
-ENTERPRISE_ID = 8888 # Replace with your Site ID
+SITE_ID = 8888 # Replace with your Site ID
 
 ## US ENVIRONMENT
 HELPLIGHTNING_ENDPOINT = 'https://api.helplightning.net/api'
