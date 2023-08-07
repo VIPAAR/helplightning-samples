@@ -38,9 +38,9 @@ ngrok http 8080
 ## Configure the Webhooks
 
 In Help Lightning, you will then need to configure a `call` webhook that
-points back to your base domain with the `/calls` path. For example:
+points back to your base domain with the `/call` path. For example:
 
-https://e058-73-78-85-105.ngrok-free.app/calls
+`https://e058-73-78-85-105.ngrok-free.app/call`
 
 You can read more about configuring webhooks on [Help Lightning's
 Webhook Documentation](https://apidocs.helplightning.net/sdks/server/webhooks/).
