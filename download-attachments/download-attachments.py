@@ -40,15 +40,12 @@ class DownloadPool:
             i.start()
 
     def queue(self, attachment):
-        print('queuing job')
         self.__queue.put(attachment)
 
     def stop(self):
-        print('stopping...')
         self.__stop_queue.put(True)
 
         for p in self.__pool:
-            print('joining')
             p.join()
         
 class Runner(threading.Thread):
@@ -72,7 +69,6 @@ class Runner(threading.Thread):
 
         
     def run(self):
-        print('running', self)
         while self.__stop_queue.empty():
             try:
                 job = self.__job_queue.get(timeout = .1)
