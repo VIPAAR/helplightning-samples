@@ -2,3 +2,6 @@
 */*.md5
 */last_run.json
 */__pycache__
+__pycache__
+siteconfig.py
+siteconfig.pyc

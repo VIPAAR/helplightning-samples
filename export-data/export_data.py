@@ -13,11 +13,15 @@ import requests
 import sys
 import tempfile
 
-# These must be filled in
-HL_API_KEY = ''
-HL_API_URL = 'https://api.helplightning.net/api'
-ENTERPRISE_ID = ''
-ZIP_PASSWORD = r''
+
+
+try:
+    import libhelplightning
+    import siteconfig
+except ImportError:
+    sys.path.append('..')
+    import libhelplightning
+    import siteconfig
 
 
 def get_logger(level=logging.DEBUG):
@@ -33,130 +37,6 @@ def get_logger(level=logging.DEBUG):
     return root
 
 
-class HLClient:
-    def __init__(self, logger, url, api_key, token):
-        self.lg = logger
-        self.url = url
-        self.api_key = api_key
-        self.token = token
-
-    ###########################
-    # START Pagination Methods
-    ###########################
-    def get_all(self, path, data={}, extra_headers={}, page_size=50):
-        """
-        Paginates through server data until
-        all records are fetched.
-        """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        while resp['total_entries'] > page * page_size:
-            page += 1
-            resp = self.get(
-                path + '?page={}&page_size={}'.format(page, page_size),
-                data,
-                extra_headers
-            )
-            entries = entries + resp.get('entries')
-        return entries
-
-    def get_all_cb(self, callback, path, data={}, extra_headers={}, page_size=50):
-        """
-        Paginates through server data until
-        all records are fetched, but calls the callback
-        function with the results for each page.
-        """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        callback(entries)
-        while resp.get('total_entries', 0) > page * page_size:
-            try:
-                resp = self.get(
-                    path + '?page={}&page_size={}'.format(page+1, page_size),
-                    data,
-                    extra_headers
-                )
-                entries = resp.get('entries')
-                callback(entries)
-                page += 1
-            except requests.exceptions.RequestException as e:
-                # retry
-                print('Error making request', e)
-                print('Retrying...')
-                pass
-
-        return True
-
-    ###########################
-    # END Pagination Methods
-    ###########################
-
-    ###########################
-    # START HTTP methods
-    ###########################
-    def get(self, path, data={}, extra_headers={}):
-        self.lg.debug('GET {}'.format(path))
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token,
-            'Content-Type': 'application/json'
-        }
-        headers.update(extra_headers)
-        r = requests.get(
-            self.url + path,
-            params=data,
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
-
-    def post(self, path, data, extra_headers={}):
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token
-        }
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers=headers
-        )
-
-    def post_no_token(self, path, data, extra_headers={}):
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers={
-                'x-helplightning-api-key': self.api_key
-            }
-        )
-
-    def _post_minimal(self, path, data, extra_headers={}):
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        headers.update(extra_headers)
-        r = requests.post(
-            self.url + path,
-            data=json.dumps(data),
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
-
-    ###########################
-    # END HTTP methods
-    ###########################
-
 
 def generate_token(partner_key):
     # create a date that expires in 1 hour
@@ -169,7 +49,7 @@ def generate_token(partner_key):
     # generate a new JWT token that will be valid for one hour and sign it with our secret
     payload = {
         'iss': 'Ghazal',
-        'sub': f'Partner:{ENTERPRISE_ID}',
+        'sub': f'Partner:{siteconfig.SITE_ID}',
         'aud': 'Ghazal',
         'exp': exp
     }
@@ -412,23 +292,18 @@ def write_calls(e_client, enterprise_id, start_date, base):
         e_client.get_all_cb(cb, url, params)
 
 
-def go(partner_key, fetch_all):
-    if ZIP_PASSWORD == '':
-        print('ZIP_PASSWORD must not be empty. '
-              'Edit the global variables at the top of this script.')
-        sys.exit(1)
-
+def go(zip_password, fetch_all):
     # We'll write this timestamp out to a file at the end of the run
     utc_now = datetime.datetime.now(datetime.timezone.utc)
 
     # Set up the Help Lightning API client 
     logger = get_logger(level=logging.INFO)
-    token = generate_token(partner_key)
-    e_client = HLClient(
+    token = generate_token(siteconfig.PARTNER_KEY)
+    e_client = libhelplightning.GaldrClient(
         logger,
-        HL_API_URL,
-        HL_API_KEY,
-        token
+        siteconfig.HELPLIGHTNING_ENDPOINT,
+        siteconfig.API_KEY,
+        token = token
     )
 
     if fetch_all:
@@ -453,7 +328,7 @@ def go(partner_key, fetch_all):
     with tempfile.TemporaryDirectory() as base:
         write_users(e_client, start_date, base)
         write_pods(e_client, start_date, base)
-        write_calls(e_client, ENTERPRISE_ID, start_date, base)
+        write_calls(e_client, siteconfig.SITE_ID, start_date, base)
 
         # Output an encrypted 7zip file
         timestamp = utc_now.strftime('%Y%m%dT%H:%M:%SZ')
@@ -462,7 +337,7 @@ def go(partner_key, fetch_all):
         else:
             filename = f'hl_export_full_{timestamp}'
 
-        os.system(f'7z a -p"{ZIP_PASSWORD}" "{filename}.7z" "{base}"')
+        os.system(f'7z a -p"{zip_password}" "{filename}.7z" "{base}"')
 
     # Calculate a checksum for the zip and write it to a checksum file
     m = open(f'{filename}.md5', 'w')
@@ -479,8 +354,8 @@ def go(partner_key, fetch_all):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        'partner_key',
-        help='The location on disk of a partner key to use for generating tokens'
+        'zip_password',
+        help='The password for the encrypted zip output file'
     )
     parser.add_argument(
         '--fetch-all',
@@ -490,4 +365,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    go(args.partner_key, args.fetch_all)
+    go(args.zip_password, args.fetch_all)
