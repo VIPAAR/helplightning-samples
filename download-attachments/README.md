@@ -32,7 +32,7 @@ A quick way to open up this server would be to use a service like
 [ngrok](ngrok.com/):
 
 ```
-nrok http 8080
+ngrok http 8080
 ```
 
 ## Configure the Webhooks
