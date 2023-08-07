@@ -136,6 +136,8 @@ class GaldrClient:
         all records are fetched, but calls the callback
         function with the results for each page.
         """
+        results = []
+        
         page = 1
         resp = self.get(
             path + '?page={}&page_size={}'.format(page, page_size),
@@ -143,7 +145,7 @@ class GaldrClient:
             extra_headers
         )
         entries = resp.get('entries')
-        callback(entries)
+        results.extend(callback(entries))
         while resp.get('total_entries', 0) > page * page_size:
             try:
                 resp = self.get(
@@ -152,7 +154,7 @@ class GaldrClient:
                     extra_headers
                 )
                 entries = resp.get('entries')
-                callback(entries)
+                results.extend(callback(entries))
                 page += 1
             except requests.exceptions.RequestException as e:
                 # retry
@@ -160,7 +162,7 @@ class GaldrClient:
                 print('Retrying...')
                 pass
 
-        return True
+        return results
     
     ###########################
     # END Pagination Methods

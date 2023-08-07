@@ -13,8 +13,6 @@ import requests
 import sys
 import tempfile
 
-
-
 try:
     import libhelplightning
     import siteconfig
