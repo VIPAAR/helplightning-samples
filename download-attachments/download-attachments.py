@@ -13,6 +13,10 @@ import datetime
 import logging
 import requests
 import sys
+import argparse
+import hashlib
+import hmac
+
 
 try:
     sys.path.append('.')
@@ -133,9 +137,11 @@ class Runner(threading.Thread):
         return token
 
 class MyServer(http.server.HTTPServer):
-    def __init__(self, host, port, pool, handler):
+    def __init__(self, host, port, pool, verify_signature, handler):
         super().__init__((host, port), handler)
         self.pool = pool
+        self.verify_signature = verify_signature != None
+        self.signature = verify_signature
             
 class MyHandler(http.server.BaseHTTPRequestHandler):
     '''
@@ -155,6 +161,9 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         content_length = int(self.headers['Content-Length'])
         data = self.rfile.read(content_length)
 
+        if self.server.verify_signature:
+            self.verify_signature(self.headers['x-helplightning-signature'], data)
+        
         if path == '/call':
             self.do_calls(data)
         elif path == '/session':
@@ -197,12 +206,27 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
         
         self.wfile.write(bytes(msg, "utf-8"))
 
+    def verify_signature(self, signature_header, body):
+        # calculate the signature to validate its
+        #  authenticity
+        hash_object = hmac.new(self.server.signature.encode('utf-8'), msg=body, digestmod=hashlib.sha256)
+        expected_signature = "sha256=" + hash_object.hexdigest()
+
+        if not hmac.compare_digest(expected_signature, signature_header):
+            raise http.client.HTTPException(status_code=403, detail="Request signatures didn't match!")
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--verify-signature',
+        help='Secret used to verify webhook signature'
+    )
+    args = parser.parse_args()
+    
     # create a pool
     pool = DownloadPool()
     
-    s = MyServer("localhost", PORT, pool, MyHandler)
+    s = MyServer("localhost", PORT, pool, args.verify_signature, MyHandler)
     try:
         s.serve_forever()
     except KeyboardInterrupt:

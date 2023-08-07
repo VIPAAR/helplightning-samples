@@ -63,3 +63,10 @@ To run this script:
 ```
 python3 download-attachments.py
 ```
+
+If you created a secret when setting up your webhooks, you can also
+verify the incoming webhooks:
+
+```
+python3 download-attachments.py --verify-signature your-secret
+```
