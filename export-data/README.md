@@ -30,10 +30,10 @@ The incremental mode will fetch all data on the first run, and then on subsequen
 
 To run the script in this mode, execute the script with no command line options added:
 ```
-python3 export_data.py partner_key_filename
+python3 export_data.py zip_password
 ```
 
 Running the script in full mode will ignore the last_run.json file and always pull the entire set of data on every run. To run the script in this mode, use the `--fetch-all` option:
 ```
-python3 export_data.py --fetch-all partner_key_filename
+python3 export_data.py --fetch-all zip_password
 ```
