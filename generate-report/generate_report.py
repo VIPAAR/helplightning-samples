@@ -11,11 +11,14 @@ import sys
 import time
 import urllib
 
-# These must be filled in
-HL_API_KEY = ''
-HL_API_URL = 'https://api.helplightning.net/api'
-ENTERPRISE_ID = ''
-
+try:
+    sys.path.append('.')
+    import libhelplightning
+    import siteconfig
+except ImportError:
+    sys.path.append('..')
+    import libhelplightning
+    import siteconfig
 
 def get_logger(level=logging.DEBUG):
     """
@@ -28,131 +31,6 @@ def get_logger(level=logging.DEBUG):
     ch.setLevel(level)
     root.addHandler(ch)
     return root
-
-
-class HLClient:
-    def __init__(self, logger, url, api_key, token):
-        self.lg = logger
-        self.url = url
-        self.api_key = api_key
-        self.token = token
-
-    ###########################
-    # START Pagination Methods
-    ###########################
-    def get_all(self, path, data={}, extra_headers={}, page_size=50):
-        """
-        Paginates through server data until
-        all records are fetched.
-        """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        while resp['total_entries'] > page * page_size:
-            page += 1
-            resp = self.get(
-                path + '?page={}&page_size={}'.format(page, page_size),
-                data,
-                extra_headers
-            )
-            entries = entries + resp.get('entries')
-        return entries
-
-    def get_all_cb(self, callback, path, data={}, extra_headers={}, page_size=50):
-        """
-        Paginates through server data until
-        all records are fetched, but calls the callback
-        function with the results for each page.
-        """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        callback(entries)
-        while resp.get('total_entries', 0) > page * page_size:
-            try:
-                resp = self.get(
-                    path + '?page={}&page_size={}'.format(page+1, page_size),
-                    data,
-                    extra_headers
-                )
-                entries = resp.get('entries')
-                callback(entries)
-                page += 1
-            except requests.exceptions.RequestException as e:
-                # retry
-                print('Error making request', e)
-                print('Retrying...')
-                pass
-
-        return True
-
-    ###########################
-    # END Pagination Methods
-    ###########################
-
-    ###########################
-    # START HTTP methods
-    ###########################
-    def get(self, path, data={}, extra_headers={}):
-        self.lg.debug('GET {}'.format(path))
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token,
-            'Content-Type': 'application/json'
-        }
-        headers.update(extra_headers)
-        r = requests.get(
-            self.url + path,
-            params=data,
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
-
-    def post(self, path, data, extra_headers={}):
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token
-        }
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers=headers
-        )
-
-    def post_no_token(self, path, data, extra_headers={}):
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers={
-                'x-helplightning-api-key': self.api_key
-            }
-        )
-
-    def _post_minimal(self, path, data, extra_headers={}):
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        headers.update(extra_headers)
-        r = requests.post(
-            self.url + path,
-            data=json.dumps(data),
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
-
-    ###########################
-    # END HTTP methods
-    ###########################
 
 
 def generate_token(partner_key):
@@ -171,7 +49,7 @@ def generate_token(partner_key):
     # generate a new JWT token that will be valid for one hour and sign it with our secret
     payload = {
         'iss': 'Ghazal',
-        'sub': f'Partner:{ENTERPRISE_ID}',
+        'sub': f'Partner:{siteconfig.SITE_ID}',
         'aud': 'Ghazal',
         'exp': exp
     }
@@ -193,10 +71,13 @@ def poll(partner_key, report_uuid):
     print('Waiting on report to complete: ', end = '', flush = True)
     while True:
         print('.', end = '', flush = True)
-        e_client = HLClient(logger,
-                            HL_API_URL,
-                            HL_API_KEY,
-                            generate_token(partner_key))
+        token = generate_token(partner_key)
+        e_client = libhelplightning.GaldrClient(
+            logger,
+            siteconfig.HELPLIGHTNING_ENDPOINT,
+            siteconfig.API_KEY,
+            token = token
+        )
         r = e_client.get(f'/v1r1/enterprise/reports/calls/{report_uuid}')
         if r['status'] == 'complete':
             print('')
@@ -206,18 +87,21 @@ def poll(partner_key, report_uuid):
         else:
             time.sleep(5)
 
-def go(partner_key, output, csv):
+def go(output, csv):
     logger = get_logger(level = logging.INFO)
-    e_client = HLClient(logger,
-                        HL_API_URL,
-                        HL_API_KEY,
-                        generate_token(partner_key))
+    token = generate_token(siteconfig.PARTNER_KEY)
+    e_client = libhelplightning.GaldrClient(
+        logger,
+        siteconfig.HELPLIGHTNING_ENDPOINT,
+        siteconfig.API_KEY,
+        token = token
+    )
 
     # start the generation of our report
     report_uuid = generate_report(e_client, csv)
 
     # now poll every 15 seconds to check if the report is done
-    url = poll(partner_key, report_uuid)
+    url = poll(siteconfig.PARTNER_KEY, report_uuid)
 
     print('Downloading')
     u = urllib.parse.urlparse(url)
@@ -231,10 +115,6 @@ def go(partner_key, output, csv):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        'partner_key',
-        help='The location on disk of a partner key to use for generating tokens'
-    )
-    parser.add_argument(
         'output',
         help='The name of the output file to generate (will be a zip file)'
     )
@@ -246,4 +126,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    go(args.partner_key, args.output, args.csv)
+    go(args.output, args.csv)
