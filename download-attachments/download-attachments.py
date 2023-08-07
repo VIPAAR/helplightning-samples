@@ -165,6 +165,8 @@ class MyHandler(http.server.BaseHTTPRequestHandler):
     def do_calls(self, data):
         att = json.loads(data)
 
+        # TODO, validate the HMAC signature!!
+        
         if att['category'] == 'attachment_created':
             # queue up a download
             self.server.pool.queue(att)
