@@ -1,210 +1,211 @@
 #!/usr/bin/env python3
+#
+# This is meant to respond to help lightning webhooks
+#  and automatically download attachments.
 
-import argparse
-import datetime
-import getpass
+import os
+import http.server
 import json
+import threading
+import queue
 import jwt
+import datetime
 import logging
 import requests
 import sys
-import time
-import urllib
 
-# These must be filled in
-HL_API_KEY = ''
-HL_API_URL = 'https://api.helplightning.net/api'
-ENTERPRISE_ID = ''
+try:
+    sys.path.append('.')
+    import libhelplightning
+    import siteconfig
+except ImportError:
+    sys.path.append('..')
+    import libhelplightning
+    import siteconfig
 
-def get_logger(level=logging.DEBUG):
-    """
-    Sets up logging to be shared across
-    all classes/functions.
-    """
-    root = logging.getLogger()
-    root.setLevel(level)
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(level)
-    root.addHandler(ch)
-    return root
+PORT = 8080
 
+class DownloadPool:
+    def __init__(self, size = 2):
+        self.__queue = queue.Queue()
+        self.__stop_queue = queue.Queue()
+        self.__size = size
+        
+        self.__pool = [Runner(self.__queue, self.__stop_queue) for x in range(self.__size)]
+        for i in self.__pool:
+            i.start()
 
-class HLClient:
-    def __init__(self, logger, url, api_key, token):
-        self.lg = logger
-        self.url = url
-        self.api_key = api_key
-        self.token = token
+    def queue(self, attachment):
+        print('queuing job')
+        self.__queue.put(attachment)
 
-    ###########################
-    # START Pagination Methods
-    ###########################
-    def get_all(self, path, data={}, extra_headers={}, page_size=50):
+    def stop(self):
+        print('stopping...')
+        self.__stop_queue.put(True)
+
+        for p in self.__pool:
+            print('joining')
+            p.join()
+        
+class Runner(threading.Thread):
+    def __init__(self, job_queue, stop_queue):
+        super().__init__()
+        
+        self.__job_queue = job_queue
+        self.__stop_queue = stop_queue
+
+    def get_logger(self, level=logging.DEBUG):
         """
-        Paginates through server data until
-        all records are fetched.
+        Sets up logging to be shared across
+        all classes/functions.
         """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        while resp['total_entries'] > page * page_size:
-            page += 1
-            resp = self.get(
-                path + '?page={}&page_size={}'.format(page, page_size),
-                data,
-                extra_headers
-            )
-            entries = entries + resp.get('entries')
-        return entries
+        root = logging.getLogger()
+        root.setLevel(level)
+        ch = logging.StreamHandler(sys.stdout)
+        ch.setLevel(level)
+        root.addHandler(ch)
+        return root
 
-    def get_all_cb(self, callback, path, data={}, extra_headers={}, page_size=50):
-        """
-        Paginates through server data until
-        all records are fetched, but calls the callback
-        function with the results for each page.
-        """
-        page = 1
-        resp = self.get(
-            path + '?page={}&page_size={}'.format(page, page_size),
-            data,
-            extra_headers
-        )
-        entries = resp.get('entries')
-        callback(entries)
-        while resp.get('total_entries', 0) > page * page_size:
+        
+    def run(self):
+        print('running', self)
+        while self.__stop_queue.empty():
             try:
-                resp = self.get(
-                    path + '?page={}&page_size={}'.format(page+1, page_size),
-                    data,
-                    extra_headers
+                job = self.__job_queue.get(timeout = .1)
+                # do something with job
+                call_id = job['data']['call_id']
+                attachment_id = job['data']['attachment']['id']
+
+                logger = self.get_logger(level=logging.INFO)
+                token = self.generate_token(siteconfig.PARTNER_KEY)
+                e_client = libhelplightning.GaldrClient(
+                    logger,
+                    siteconfig.HELPLIGHTNING_ENDPOINT,
+                    siteconfig.API_KEY,
+                    token = token
                 )
-                entries = resp.get('entries')
-                callback(entries)
-                page += 1
-            except requests.exceptions.RequestException as e:
-                # retry
-                print('Error making request', e)
-                print('Retrying...')
+                resp = e_client.get(f'/v1r1/enterprise/calls/{call_id}/attachments')
+
+                #print(resp)
+
+                # filter for the attachment we want
+                res = filter(lambda x: x['id'] == attachment_id, resp)
+                a = list(res)[0]
+
+                url = a['signed_url']
+                name = a['name']
+
+                path = os.path.join('.', 'attachments', str(call_id), str(attachment_id))
+                try: os.makedirs(path)
+                except OSError: pass
+
+                print(f'Downloading {name}')
+                with open(os.path.join(path, name), 'wb') as f:
+                    r = requests.get(url, stream = True)
+                    for l in r.iter_content(512):
+                        f.write(l)
+                print(f'Completed download of {name}')
+
+            except queue.Empty:
+                pass
+            except Exception as e:
+                print('Runner raised an exception:', e)
                 pass
 
-        return True
+    def generate_token(self, partner_key):
+        # create a date that expires in 1 hour
+        exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=3600)
 
-    ###########################
-    # END Pagination Methods
-    ###########################
+        # load our private key, which is in pkcs8 format
+        with open(partner_key) as f:
+            secret = f.read()
 
-    ###########################
-    # START HTTP methods
-    ###########################
-    def get(self, path, data={}, extra_headers={}):
-        self.lg.debug('GET {}'.format(path))
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token,
-            'Content-Type': 'application/json'
+        # generate a new JWT token that will be valid for one hour and sign it with our secret
+        payload = {
+            'iss': 'Ghazal',
+            'sub': f'Partner:{siteconfig.SITE_ID}',
+            'aud': 'Ghazal',
+            'exp': exp
         }
-        headers.update(extra_headers)
-        r = requests.get(
-            self.url + path,
-            params=data,
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
 
-    def post(self, path, data, extra_headers={}):
-        headers = {
-            'x-helplightning-api-key': self.api_key,
-            'Authorization': self.token
-        }
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers=headers
-        )
+        token = jwt.encode(payload, key=secret, algorithm='RS256')
 
-    def post_no_token(self, path, data, extra_headers={}):
-        return self._post_minimal(
-            path,
-            data,
-            extra_headers={
-                'x-helplightning-api-key': self.api_key
-            }
-        )
+        return token
 
-    def _post_minimal(self, path, data, extra_headers={}):
-        headers = {
-            'Content-Type': 'application/json'
-        }
-        headers.update(extra_headers)
-        r = requests.post(
-            self.url + path,
-            data=json.dumps(data),
-            headers=headers
-        )
-        r.raise_for_status()
-        return r.json()
+class MyServer(http.server.HTTPServer):
+    def __init__(self, host, port, pool, handler):
+        super().__init__((host, port), handler)
+        self.pool = pool
+            
+class MyHandler(http.server.BaseHTTPRequestHandler):
+    '''
+    A simple webserver that responds to either:
+    GET /call
+    GET /session
 
-    ###########################
-    # END HTTP methods
-    ###########################
+    However, it only currently takes action on
+    GET /call
+    when the category is an attachment_created
+    '''
+    def do_GET(self):
+        self.do_404()
 
+    def do_POST(self):
+        path = self.path
+        content_length = int(self.headers['Content-Length'])
+        data = self.rfile.read(content_length)
 
-def generate_token(partner_key):
-    # create a date that expires in 1 minutes
-    # It is best to use tokens with short-expirations and generate
-    #  them before each call. These cannot be revoked, so if you
-    #  generate a token with a long expiration and it is leaked, the only
-    #  way to invalid it is to rotate your partner key, which affects
-    #  every application using that key!
-    exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=60)
+        if path == '/call':
+            self.do_calls(data)
+        elif path == '/session':
+            self.do_sessions(data)
+        else:
+            self.do_404()
 
-    # load our private key, which is in pkcs8 format
-    with open(partner_key) as f:
-        secret = f.read()
+    def do_calls(self, data):
+        att = json.loads(data)
 
-    # generate a new JWT token that will be valid for one hour and sign it with our secret
-    payload = {
-        'iss': 'Ghazal',
-        'sub': f'Partner:{ENTERPRISE_ID}',
-        'aud': 'Ghazal',
-        'exp': exp
-    }
+        if att['category'] == 'attachment_created':
+            # queue up a download
+            self.server.pool.queue(att)
+        self.do_response()
 
-    token = jwt.encode(payload, key=secret, algorithm='RS256')
+    def do_sessions(self, data):
+        self.do_response()
 
-    return token
+    def do_response(self):
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(bytes("ok\n", "utf-8"))
 
-def go(partner_key, email):
-    logger = get_logger(level = logging.INFO)
-    e_client = HLClient(logger,
-                        HL_API_URL,
-                        HL_API_KEY,
-                        generate_token(partner_key))
+    def do_404(self):
+        self.send_response(404)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
 
-    # search for the user
-    matches = e_client.get_all('/v1r1/api/enterprise/users', {'filter', f'email={email}'})
-    if len(matches) == 0:
-        print(sys.stderr, f'Error: No users with email {email}')
-        sys.exit(1)
+        msg = '''
+<!DOCTYPE html>
+<html>
+  <body>
+    <h1>Not Found!</h1>
+  </body>
+</html>
+        '''
+        
+        self.wfile.write(bytes(msg, "utf-8"))
 
-    
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        'partner_key',
-        help='The location on disk of a partner key to use for generating tokens'
-    )
-    parser.add_argument(
-        'email',
-        help='The email address of the user to impersonate'
-    )
+    # create a pool
+    pool = DownloadPool()
+    
+    s = MyServer("localhost", PORT, pool, MyHandler)
+    try:
+        s.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        s.server_close()
+        pool.stop()
 
-    args = parser.parse_args()
-
-    go(args.partner_key, args.email)

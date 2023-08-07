@@ -9,7 +9,6 @@ import json
 import jwt
 import logging
 import os
-import requests
 import sys
 import tempfile
 
