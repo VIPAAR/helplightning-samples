@@ -25,13 +25,15 @@ Please make sure you have configured the `siteconfig.py` in the parent directory
 ## Usage
 
 The script by default generates a json file. Pass in the `--csv`
-option to generate a CSV file.
+option to generate a CSV file. 
+
+**Note: the output is a zip file with the json/csv inside it**
 
 ```
-python3 generate_report.py output.json
+python3 generate_report.py output.zip
 ```
 
 Or as a CSV:
 ```
-python generate_report.py --csv output.csv
+python generate_report.py --csv output.zip
 ```
