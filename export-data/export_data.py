@@ -112,6 +112,7 @@ def write_users(e_client, start_date, base):
                     row[p] = e[p]
 
                 writer.writerow(row)
+            return entries
 
         e_client.get_all_cb(cb, '/v1r1/enterprise/users', params)
 
@@ -286,6 +287,7 @@ def write_calls(e_client, enterprise_id, start_date, base):
                         'isExternal': participant['enterpriseId'] != f'{enterprise_id}'
                     }
                     link_table_writer.writerow(row)
+            return entries
 
         e_client.get_all_cb(cb, url, params)
 
