@@ -6,3 +6,5 @@ __pycache__
 siteconfig.py
 siteconfig.pyc
 .venv
+.vscode
+.DS_Store
