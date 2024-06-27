@@ -8,3 +8,4 @@ siteconfig.pyc
 .venv
 .vscode
 .DS_Store
+/tagging-recording/call_*
