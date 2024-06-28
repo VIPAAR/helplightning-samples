@@ -32,8 +32,14 @@
 </style>
 </head>
 <body>
-  <p><button onclick="startRecording()">StartRecording</button></p>
-  <p><button onclick="stopRecording()">StopRecording</button></p>
+  <label for="sites">Choose a site:</label>
+
+  <select name="sites" id="sites">
+    <option value="DEV ASIA">https://app-dev.helplightning.net.cn/</option>
+  </select>
+  <p><button id="btnOpen" onclick="openSite()">Open Help Lightning</button></p>
+  <p><button id="btnStart" onclick="startRecording()">StartRecording</button></p>
+  <p><button id="btnStop" onclick="stopRecording()">StopRecording</button></p>
   <p><button onclick="refresh()">refresh</button></p>
 
   <div id="rec_div">
@@ -48,29 +54,30 @@
   var recordings;
 
   addEventListener("DOMContentLoaded", (event) => {
-    popup = window.open('https://app-dev.helplightning.net.cn/');
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").disabled = true;
     recordings = new Array();
-    let rec = {
-          "name": "recording_" + generateName(),
-          "uuid": "58fa6baa-f86d-4d6a-a5cd-3b1535ed97a1",
-          "url": "..."
-        }
-
-    recordings.push(rec)
   });
 
-
+  function openSite() {
+    url = document.getElementById("sites").innerText;
+    popup = window.open(url);
+  }
 
   function startRecording() {
     popup.postMessage({
       type: 'START_RECORDING'
     }, '*');
+    document.getElementById("btnStart").disabled = true;
+    document.getElementById("btnStop").disabled = false;
   }
 
   function stopRecording() {
     popup.postMessage({
       type: 'STOP_RECORDING'
     }, '*');
+    document.getElementById("btnStart").disabled = false;
+    document.getElementById("btnStop").disabled = true;
   }
 
   function refresh() {
@@ -100,7 +107,7 @@
         let rec = {
           "name": "recording_" + generateName(),
           "uuid": event.data.uuid,
-          "url": "..."
+          "url": ""
         }
 
         recordings.push(rec)
@@ -124,15 +131,22 @@
 
       var text1 = document.createTextNode(arr[i].name);
       var text2 = document.createTextNode(arr[i].uuid);
-      var url = document.createElement('a');
-      var linkText = document.createTextNode("link");
-      url.appendChild(linkText);
-      url.title = "link";
-      url.href = arr[i].url;
 
       td1.appendChild(text1);
       td2.appendChild(text2);
-      td3.appendChild(url);
+
+      if (arr[i].url === "") {
+        var url = document.createElement('a');
+        var linkText = document.createTextNode("link");
+        url.appendChild(linkText);
+        url.title = "link";
+        url.href = arr[i].url;
+        url.target = "_blank";
+        td3.appendChild(url);
+      } else {
+        var t = document.createTextNode("");
+        td3.appendChild(t);
+      }
 
       tr.appendChild(td1);
       tr.appendChild(td2);
@@ -144,12 +158,15 @@
   }
 
   function print(json) {
-    new_recordings = new Array();
-    for (const r of json) {
-      let found = recordings.find((element) => r["uuid"] === element["uuid"]);
-      found.url = r.url;
+    if (json.length != 0) {
+      new_recordings = new Array();
+      for (const r of json) {
+        let found = recordings.find((element) => r["uuid"] === element["uuid"]);
+        found.url = r.url;
 
-      new_recordings.push(found);
+        new_recordings.push(found);
+      }
+
       create_table(new_recordings);
       recordings.length = 0;
       recordings = new_recordings;
