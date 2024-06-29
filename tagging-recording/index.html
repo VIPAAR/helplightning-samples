@@ -40,10 +40,12 @@
   <p><button id="btnOpen" onclick="openSite()">Open Help Lightning</button></p>
   <p><button id="btnStart" onclick="startRecording()">StartRecording</button></p>
   <p><button id="btnStop" onclick="stopRecording()">StopRecording</button></p>
-  <p><button onclick="refresh()">refresh</button></p>
+  <p><button onclick="refresh()">Refresh</button></p>
 
   <div id="rec_div">
   </div>
+
+  <p><button onclick="reset()">Reset</button></p>
 </body>
 
 </html>
@@ -100,12 +102,24 @@
     .then((json) => print(json));
   }
 
+  function reset() {
+    fetch("http://127.0.0.1:8899", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "reset"
+      }),
+      headers: {
+        "Content-type": "application/json; charset=UTF-8"
+      }
+    })
+    .then((response) => reset_page())}
+
   window.addEventListener(
     "message",
     (event) => {
       if (event.data.type === "RECORDING_STARTED") {
         let rec = {
-          "name": "recording_" + generateName(),
+          "name": generateName(),
           "uuid": event.data.uuid,
           "url": ""
         }
@@ -122,6 +136,19 @@
     document.getElementById("rec_div").firstChild.remove();
 
     var table = document.createElement('table');
+
+    var header = table.createTHead();
+    var row = header.insertRow(0);
+
+    var cell1 = row.insertCell(0);
+    cell1.innerHTML = "<b>Tag</b>"
+
+    var cell2 = row.insertCell(1);
+    cell2.innerHTML = "<b>UUID</b>"
+
+    var cell3 = row.insertCell(2);
+    cell3.innerHTML = "<b>URL</b>"
+
     for (var i = 0; i < arr.length; i++) {
       var tr = document.createElement('tr');
 
@@ -136,6 +163,9 @@
       td2.appendChild(text2);
 
       if (arr[i].url === "") {
+        var t = document.createTextNode("");
+        td3.appendChild(t);
+      } else {
         var url = document.createElement('a');
         var linkText = document.createTextNode("link");
         url.appendChild(linkText);
@@ -143,9 +173,6 @@
         url.href = arr[i].url;
         url.target = "_blank";
         td3.appendChild(url);
-      } else {
-        var t = document.createTextNode("");
-        td3.appendChild(t);
       }
 
       tr.appendChild(td1);
@@ -189,5 +216,10 @@
     var name = capFirst(name1[getRandomInt(0, name1.length + 1)]) + '_' + capFirst(name2[getRandomInt(0, name2.length + 1)]);
     return name;
 
+  }
+
+  function reset_page() {
+    recordings.length = 0;
+    create_table(recordings);
   }
 </script>

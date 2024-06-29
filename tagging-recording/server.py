@@ -61,32 +61,35 @@ class S(BaseHTTPRequestHandler):
 
         return token
 
-    def save_data(self, call_id, uuid):
+    def save_data(self, call_id, uuid, attachement_id):
         writepath = current_dir + call_id
         mode = 'a' if os.path.exists(writepath) else 'w'
         with open(writepath, mode) as f:
-            f.write(uuid + '\n')
+            f.write(uuid + ',' + str(attachement_id) + '\n')
 
-    def get_call_from_uuid(self, uuids):
+    def get_cached_files(self):
         filenames = next(walk(current_dir), (None, None, []))[2]
         prefix = 'call_'
         files = filter(lambda x: x.startswith(prefix), filenames)
-        calls = list(files)
-        arr = []
+        return list(files)
+
+    def get_attachments_from_uuid(self, uuids):
+        calls = self.get_cached_files()
+        dictionary = {}
         for f in calls:
             with open(current_dir + f, 'r') as file:
                 lines = file.readlines()
                 for line in lines:
                     line = line.strip()
-                    if line in uuids:
-                        arr.append(f)
+                    data = line.split(",")
+                    if data[0] in uuids:
+                        dictionary[data[1]] = f # {attachment_id: call_id}
 
 
-        myset = set(arr)
-        logging.info("\n %s", list(myset))
-        return list(myset)
+        logging.info("\n %s", dictionary)
+        return dictionary
 
-    def get_call_attachments(self, call_ids):
+    def get_call_attachments(self, call_attachment_dict):
         logger = self.get_logger(level=logging.INFO)
         token = self.generate_token(siteconfig.PARTNER_KEY)
         e_client = libhelplightning.GaldrClient(
@@ -96,11 +99,10 @@ class S(BaseHTTPRequestHandler):
                 token = token
             )
         attachments = []
-        for id in call_ids:
+        for attachment_id, call_id in call_attachment_dict.items():
             time.sleep(0.100)
-            resp = e_client.get(f'/api/v1r1/enterprise/calls/{id}/attachments')
-            for e in resp:
-                attachments.append({"uuid": e.get("uuid"), "url": e.get("signed_url")})
+            resp = e_client.get(f'/api/v1r1/enterprise/calls/{call_id}/attachments/{attachment_id}')
+            attachments.append({"uuid": resp.get("uuid"), "url": resp.get("signed_url")})
 
         return attachments
 
@@ -112,6 +114,7 @@ class S(BaseHTTPRequestHandler):
         self.wfile.write(bytes(file_to_open, 'utf-8'))
 
     def do_POST(self):
+        response = "{}"
         content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
         post_data = self.rfile.read(content_length) # <--- Gets the data itself
         logging.info("POST request,\nPath: %s\nHeaders:\n%s\n\nBody:\n%s\n",
@@ -124,17 +127,23 @@ class S(BaseHTTPRequestHandler):
 
         if type == "call" and category == "attachment_created":
             uuid = call_data.get("data").get("attachment").get("uuid")
+            attachement_id = call_data.get("data").get("attachment").get("id")
             call_id = call_data.get("data").get("call_id")
-            logging.info("\nAttachment: \n call_id: %s \n uuid: %s \n", call_id, uuid)
-            self.save_data(call_id, uuid)
 
-        response = ""
+            logging.info("\nAttachment: id - %s \n call_id: %s \n uuid: %s \n", attachement_id, call_id, uuid)
+            self.save_data(call_id, uuid, attachement_id)
+
+
         if type == "download":
             uuids = call_data.get("uuids")
-            call_ids = self.get_call_from_uuid(uuids)
-            attachments = self.get_call_attachments(call_ids)
-            res = filter(lambda x: x['uuid'] in uuids, attachments)
-            response = json.dumps(list(res))
+            call_attachment_dict = self.get_attachments_from_uuid(uuids)
+            attachments = self.get_call_attachments(call_attachment_dict)
+            response = json.dumps(attachments)
+
+        if type == "reset":
+            files = self.get_cached_files()
+            for f in files:
+                os.remove(current_dir + f)
 
         self._set_response()
         self.send_header('Content-Type', 'application/json')
