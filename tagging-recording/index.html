@@ -36,6 +36,7 @@
 
   <select name="sites" id="sites">
     <option value="DEV ASIA">https://app-dev.helplightning.net.cn/</option>
+    <option value="DOCKER">https://containers-asia.helplightning.net:32771/</option>
   </select>
   <p><button id="btnOpen" onclick="openSite()">Open Help Lightning</button></p>
   <p><button id="btnStart" onclick="startRecording()">StartRecording</button></p>
@@ -45,7 +46,7 @@
   <div id="rec_div">
   </div>
 
-  <p><button onclick="reset()">Reset</button></p>
+  <p><button onclick="reset()" style="display: none;">Reset</button></p>
 </body>
 
 </html>
@@ -62,7 +63,8 @@
   });
 
   function openSite() {
-    url = document.getElementById("sites").innerText;
+    var e = document.getElementById("sites");
+    url = e.options[e.selectedIndex].text;
     popup = window.open(url);
   }
 
@@ -117,18 +119,34 @@
   window.addEventListener(
     "message",
     (event) => {
-      if (event.data.type === "RECORDING_STARTED") {
-        let rec = {
-          "name": generateName(),
-          "uuid": event.data.uuid,
-          "url": ""
+      if (event.data.type === "RECORDING_STARTED" && event.data.uuid != null) {
+        document.getElementById("btnStart").disabled = true;
+        document.getElementById("btnStop").disabled = false;
+
+        let found = recordings.find((element) => event.data.uuid === element["uuid"]);
+        if (found === undefined) {
+          let rec = {
+            "name": generateName(), //randomly tagging the recordings
+            "uuid": event.data.uuid,
+            "status": "STARTED",
+            "url": ""
+          }
+
+          recordings.push(rec)
         }
+      } else if (event.data.type === "RECORDING_STOPPED" && event.data.uuid != null) {
+        document.getElementById("btnStart").disabled = false;
+        document.getElementById("btnStop").disabled = true;
 
-        recordings.push(rec)
-
-        create_table(recordings);
+        rec = {
+            "uuid": event.data.uuid,
+            "url": "",
+            "status": "STOPPED"
+        }
+        updateRecordings([rec])
       }
 
+      create_table(recordings);
     }
   );
 
@@ -186,17 +204,25 @@
 
   function print(json) {
     if (json.length != 0) {
-      new_recordings = new Array();
-      for (const r of json) {
-        let found = recordings.find((element) => r["uuid"] === element["uuid"]);
-        found.url = r.url;
+        updateRecordings(json)
+        create_table(recordings);
+    }
+  }
 
-        new_recordings.push(found);
-      }
+  function updateRecordings(uuids) {
+    for (const u of uuids) {
+        let found = recordings.find((element) => u["uuid"] === element["uuid"]);
+        if (found === undefined) {
+            found = u;
+            found.name = generateName();
+        }
+        new_found = found;
+        recordings.pop(found);
 
-      create_table(new_recordings);
-      recordings.length = 0;
-      recordings = new_recordings;
+        new_found.url = u.url;
+        new_found.status = u.status;
+
+        recordings.push(new_found);
     }
   }
 
