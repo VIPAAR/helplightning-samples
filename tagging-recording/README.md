@@ -35,6 +35,15 @@ a7c1de42-9900-41e6-9ef4-cdabf01d45e3,31674
 f4a753f2-ee63-4ec7-adaf-5044c88a7dcd,31678
 
 ```
+We will tag the recording automatically when receive the `RECORDING_STARTED` event from citron.
+
+In `index.html`, we have one post function to backend:
+
+```
+POST http://127.0.0.1:8899 {'type': 'download', uuids: [....]}
+```
+This will try to look and parse the call files(if have one), then match the uuid with the attachment id and get the `signed_url` back.
+
 
 To run this script:
 
