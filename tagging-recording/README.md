@@ -19,6 +19,7 @@ This script will start up an HTTP server on port 8899.
 It is recommanded to set up another public web service and forward the web hook request to server.
 
 ## Usage
+This script use `window.postMessage` to interacting with citron. So make sure open HL page with button on top of current page.
 
 The script will start up a web server on port 8899 and will listen for
 incoming webhooks of type `call` with a category of `attachment_created`.
